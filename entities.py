@@ -1,5 +1,3 @@
-import time
-
 import pygame
 import os
 import math
@@ -17,7 +15,6 @@ class Platform:
 
     def get_hitbox(self):
         return self.rect
-
 
 class Bullet:
     def __init__(self, x, y, direction):
@@ -57,36 +54,48 @@ class BossBullet:
     def draw(self, screen):
         pygame.draw.rect(screen, (255, 0, 255), self.rect)
 
-class Gun:
-    def __init__(self, x, y):
-        super().__init__()
+class Character:
+    def __init__(self, x, y, width=64, height=64):
         self.x = x
         self.y = y
-        self.image = pygame.image.load(f'textures/gun.png').convert_alpha()
-        self.rect = self.image.get_rect(topleft = (x, y))
-        self.picked_up = False
-
-    def update(self, player):
-        if not self.picked_up and self.rect.colliderect(player.rect):
-            self.picked_up = True
-            player.has_gun = True
-            player.gun_timer = time.time()
-
-    def draw(self, surface):
-        if not self.picked_up:
-            surface.blit(self.image, self.rect)
-
-class Player:
-    def __init__(self, x, y):
-        self.x = x
-        self.y = y
-        self.width = 64
-        self.height = 64
+        self.width = width
+        self.height = height
         self.vel_y = 0
-        self.speed = 3
         self.gravity = 0.5
-        self.jump_power = 15
         self.is_jumping = False
+        self.alive = True
+
+    def get_hitbox(self):
+        return pygame.Rect(self.x, self.y, self.width, self.height)
+
+    def apply_gravity_and_platform_collision(self, platforms, ground_level=500):
+        self.vel_y += self.gravity
+        self.y += self.vel_y
+
+        on_platform = False
+        rect = self.get_hitbox()
+
+        for plat in platforms:
+            if rect.colliderect(plat.rect):
+                if self.vel_y >= 0 and rect.bottom - self.vel_y <= plat.rect.top:
+                    self.y = plat.rect.top - self.height
+                    self.vel_y = 0
+                    self.is_jumping = False
+                    on_platform = True
+
+        if not on_platform and self.y < ground_level:
+            self.is_jumping = True
+
+        if self.y >= ground_level:
+            self.y = ground_level
+            self.vel_y = 0
+            self.is_jumping = False
+
+class Player(Character):
+    def __init__(self, x, y):
+        super().__init__(x, y)
+        self.speed = 3
+        self.jump_power = 15
         self.facing_right = True
         self.health = 10
         self.is_attacking = False
@@ -94,24 +103,15 @@ class Player:
         self.attack_timer = 1
         self.invincible = False
         self.invincibility_timer = 0
-        self.shield_active = False
-        self.shield_cooldown = 0
         self.attack_cooldown = 0
         self.attack_ready = True
         self.attack_key_released = True
-        self.has_gun = False
-        self.gun_timer = 0
-        self.bullets = pygame.sprite.Group()
-        self.shoot_cooldown = 500
-        self.last_shot_time = 0
 
         # Load images
         self.idle_img = load_image("char.png")
         self.idle_img_left = pygame.transform.flip(self.idle_img, True, False)
-
         self.move_images_right = [load_image(f"char_move_{i}.png") for i in range(1, 4)]
         self.move_images_left = [pygame.transform.flip(img, True, False) for img in self.move_images_right]
-
         self.attack_images_right = [load_image("char_atk_1.png"), load_image("char_atk_2.png")]
         self.attack_images_left = [pygame.transform.flip(img, True, False) for img in self.attack_images_right]
 
@@ -124,23 +124,12 @@ class Player:
         self.attack_anim_timer = 0
         self.attack_anim_speed = 5
 
-    def get_hitbox(self):
-        return pygame.Rect(self.x, self.y, self.width, self.height)
-
     def get_attack_hitbox(self):
         if self.is_attacking:
             if self.facing_right:
                 return pygame.Rect(self.x + self.width, self.y + 16, 32, 32)
             else:
                 return pygame.Rect(self.x - 32, self.y + 16, 32, 32)
-        return None
-
-    def get_shield_hitbox(self):
-        if self.shield_active:
-            if self.facing_right:
-                return pygame.Rect(self.x + self.width, self.y + 10, 40, self.height - 20)
-            else:
-                return pygame.Rect(self.x - 40, self.y + 10, 40, self.height - 20)
         return None
 
     def update(self, keys, platforms):
@@ -168,16 +157,6 @@ class Player:
         if self.attack_cooldown > 0:
             self.attack_cooldown -= 1
 
-        if keys[pygame.K_x] and self.shield_cooldown <= 0:
-            self.shield_active = True
-        else:
-            self.shield_active = False
-
-        if self.shield_cooldown > 0:
-            self.shield_cooldown -= 1
-        if self.shield_active:
-            self.shield_cooldown = 240
-
         if keys[pygame.K_LEFT]:
             if self.x > 0:
                 self.x -= self.speed
@@ -189,26 +168,8 @@ class Player:
                 self.facing_right = True
                 moving = True
 
-        self.vel_y += self.gravity
-        self.y += self.vel_y
-
-        on_platform = False
-        player_rect = self.get_hitbox()
-        for plat in platforms:
-            if player_rect.colliderect(plat.rect):
-                if self.vel_y >= 0 and player_rect.bottom - self.vel_y <= plat.rect.top:
-                    self.y = plat.rect.top - self.height
-                    self.vel_y = 0
-                    self.is_jumping = False
-                    on_platform = True
-
-        if not on_platform and self.y < 500:
-            self.is_jumping = True
-
-        if self.y >= 500:
-            self.y = 500
-            self.vel_y = 0
-            self.is_jumping = False
+        # Gravity and platform collision
+        self.apply_gravity_and_platform_collision(platforms)
 
         if self.invincible:
             self.invincibility_timer -= 1
@@ -221,9 +182,6 @@ class Player:
                 self.is_attacking = False
                 self.attack_anim_index = 0
                 self.attack_anim_timer = 0
-
-        if self.has_gun and (time.time() - self.gun_timer > 5):
-            self.has_gun = False
 
         # Animation
         if self.is_attacking:
@@ -251,89 +209,44 @@ class Player:
             self.anim_index = 0
             self.anim_timer = 0
 
-    def shoot(self, direction):
-        current_time = pygame.time.get_ticks()
-        if self.has_gun and current_time - self.last_shot_time > self.shoot_cooldown:
-            bullet = Bullet(self.x + self.width // 2, self.y + self.height // 2, direction)
-            self.bullets.add(bullet)
-            self.last_shot_time = current_time
-
     def draw(self, screen):
         screen.blit(self.current_img, (self.x, self.y))
 
-
-class Enemy:
+class Enemy(Character):
     def __init__(self, x, y):
-        self.x = x
-        self.y = y
-        self.width = 64
-        self.height = 64
+        super().__init__(x, y)
         self.speed = 1.5
         self.direction = 1
-        self.alive = True
         self.img = load_image("enemy.png")
         self.img_left = pygame.transform.flip(self.img, True, False)
         self.bullets = []
-        self.shoot_cooldown = 120  # 2 giây
+        self.shoot_cooldown = 120
         self.shoot_timer = 0
-
-        self.vel_y = 0
-        self.gravity = 0.5
-        self.is_jumping = False
-
-    def get_hitbox(self):
-        return pygame.Rect(self.x, self.y, self.width, self.height)
 
     def update(self, platforms):
         if not self.alive:
             return
 
-        # Di chuyển ngang
         self.x += self.speed * self.direction
 
-        # Rẽ trái phải khi chạm giới hạn (300 - 700)
         if self.x < 300:
             self.direction = 1
         elif self.x > 700 - self.width:
             self.direction = -1
 
-        # Trọng lực và va chạm platform
-        self.vel_y += self.gravity
-        self.y += self.vel_y
+        self.apply_gravity_and_platform_collision(platforms)
 
-        enemy_rect = self.get_hitbox()
-        on_platform = False
-        for plat in platforms:
-            if enemy_rect.colliderect(plat.rect):
-                # Chỉ xử lý khi rơi xuống chạm platform
-                if self.vel_y >= 0 and enemy_rect.bottom - self.vel_y <= plat.rect.top:
-                    self.y = plat.rect.top - self.height
-                    self.vel_y = 0
-                    self.is_jumping = False
-                    on_platform = True
-        if not on_platform and self.y < 500:
-            self.is_jumping = True
-
-        if self.y >= 500:
-            self.y = 500
-            self.vel_y = 0
-            self.is_jumping = False
-
-        # Bắn đạn
         if self.shoot_timer > 0:
             self.shoot_timer -= 1
         else:
             self.shoot()
             self.shoot_timer = self.shoot_cooldown
 
-        # Update bullets
         for bullet in self.bullets:
             bullet.update()
-        # Xóa đạn không còn alive
         self.bullets = [b for b in self.bullets if b.alive]
 
     def shoot(self):
-        # Bắn đạn theo hướng đang đi
         direction = self.direction
         bullet_x = self.x + (self.width if direction == 1 else -16)
         bullet_y = self.y + self.height // 2
@@ -346,7 +259,6 @@ class Enemy:
 
         for bullet in self.bullets:
             bullet.draw(screen)
-
 
 class Boss(Enemy):
     def __init__(self, x, y):

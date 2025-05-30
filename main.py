@@ -6,53 +6,53 @@ from entities import Player, Enemy, Platform, Boss
 
 def main():
     pygame.init()
-
     WIDTH, HEIGHT = 800, 600
     screen = pygame.display.set_mode((WIDTH, HEIGHT))
     pygame.display.set_caption("Platformer Game")
     clock = pygame.time.Clock()
 
+    def load_image(path):
+        return pygame.transform.scale(pygame.image.load(path), (WIDTH, HEIGHT))
+
     # Tạo platform từng level
     platforms_levels = [
-        # Level 1
         [Platform(200, 450, 200, 20), Platform(500, 400, 150, 20)],
-        # Level 2
         [Platform(150, 400, 150, 20), Platform(600, 350, 200, 20)],
-        # Level 3
         [Platform(100, 450, 100, 20), Platform(300, 350, 100, 20), Platform(500, 450, 100, 20)],
-        # Level 4
         [Platform(200, 500, 100, 20), Platform(400, 400, 100, 20), Platform(600, 300, 100, 20)],
-        # Level 5 (Boss)
-        [Platform(100, 550, 600, 20), Platform(350, 400, 100, 20)]
+        [Platform(100, 550, 600, 20), Platform(350, 400, 255, 20)]
     ]
 
-    # Enemy spawn trên platform
     levels = [
-        # Level 1
         [Enemy(220, 450 - 64), Enemy(520, 400 - 64)],
-        # Level 2
         [Enemy(170, 400 - 64), Enemy(620, 350 - 64)],
-        # Level 3
         [Enemy(120, 450 - 64), Enemy(320, 350 - 64), Enemy(520, 450 - 64)],
-        # Level 4
         [Enemy(220, 500 - 64), Enemy(420, 400 - 64), Enemy(620, 300 - 64)],
-        # Level 5 (Boss)
         [Boss(350, 400 - 64)]
     ]
+
+    font = pygame.font.SysFont(None, 36)
+    big_font = pygame.font.SysFont(None, 72)
+
+    def draw_text(text, x, y, color=(255, 255, 255), center=False, font_obj=None):
+        font_to_use = font_obj if font_obj else font
+        img = font_to_use.render(text, True, color)
+        rect = img.get_rect()
+        if center:
+            rect.center = (x, y)
+        else:
+            rect.topleft = (x, y)
+        screen.blit(img, rect)
+
+    # Trạng thái
+    in_menu = True
+    game_over = False
+    game_win = False
 
     current_level = 0
     enemies = levels[current_level]
     platforms = platforms_levels[current_level]
-
     player = Player(50, 500)
-
-    font = pygame.font.SysFont(None, 36)
-    game_over = False
-    game_win = False
-
-    def draw_text(text, x, y, color=(255, 255, 255)):
-        img = font.render(text, True, color)
-        screen.blit(img, (x, y))
 
     while True:
         dt = clock.tick(60)
@@ -63,33 +63,51 @@ def main():
                 pygame.quit()
                 sys.exit()
 
+        # Hiển thị menu chính
+        if in_menu:
+            screen.blit(load_image(f"textures/title.jpg"), (0, 0))  # Dùng title.jpg làm nền menu
+            draw_text("Press ENTER to start", WIDTH // 2, 550, (255, 0, 0), center=True)
+
+            pygame.display.flip()
+
+            for event in pygame.event.get():
+                if event.type == pygame.QUIT:
+                    pygame.quit()
+                    sys.exit()
+                elif event.type == pygame.KEYDOWN and event.key == pygame.K_RETURN:
+                    in_menu = False
+            continue
+
         if game_over:
             screen.fill((0, 0, 0))
-            draw_text("GAME OVER", WIDTH // 2 - 80, HEIGHT // 2)
+            draw_text("YOU LOST!", WIDTH // 2, HEIGHT // 2 - 40, (255, 0, 0), center=True, font_obj=big_font)
+            draw_text("Press ESC to quit", WIDTH // 2, HEIGHT // 2 + 20, (255, 255, 255), center=True)
             pygame.display.flip()
+            if keys[pygame.K_ESCAPE]:
+                pygame.quit()
+                sys.exit()
             continue
 
         if game_win:
             screen.fill((0, 0, 0))
-            draw_text("YOU WIN!", WIDTH // 2 - 80, HEIGHT // 2)
+            draw_text("YOU WON!", WIDTH // 2, HEIGHT // 2 - 40, (0, 255, 0), center=True, font_obj=big_font)
+            draw_text("Press ESC to quit", WIDTH // 2, HEIGHT // 2 + 20, (255, 255, 255), center=True)
             pygame.display.flip()
+            if keys[pygame.K_ESCAPE]:
+                pygame.quit()
+                sys.exit()
             continue
 
-        # Update player và enemies
+        # Cập nhật
         player.update(keys, platforms)
         for enemy in enemies:
             if enemy.alive:
                 enemy.update(platforms)
 
-        # Kiểm tra đạn của enemy trúng player
         player_hitbox = player.get_hitbox()
-        shield_hitbox = player.get_shield_hitbox()
         for enemy in enemies:
             for bullet in enemy.bullets[:]:
                 if bullet.rect.colliderect(player_hitbox):
-                    if player.shield_active and shield_hitbox and bullet.rect.colliderect(shield_hitbox):
-                        enemy.bullets.remove(bullet)
-                    else:
                         enemy.bullets.remove(bullet)
                         if not player.invincible:
                             player.health -= 1
@@ -98,7 +116,6 @@ def main():
                             if player.health <= 0:
                                 game_over = True
 
-        # Kiểm tra đòn đánh player trúng enemy
         if player.is_attacking:
             attack_hitbox = player.get_attack_hitbox()
             for enemy in enemies[:]:
@@ -110,7 +127,6 @@ def main():
                     else:
                         enemies.remove(enemy)
 
-        # Kiểm tra chuyển màn
         if len(enemies) == 0 and player.x >= WIDTH - player.width:
             current_level += 1
             if current_level < len(levels):
@@ -132,16 +148,13 @@ def main():
 
         player.draw(screen)
 
-        # Vẽ đạn của enemy
         for enemy in enemies:
             for bullet in enemy.bullets:
                 bullet.draw(screen)
 
-        # HUD
         draw_text(f"HP: {player.health}", 10, 10)
         draw_text(f"Level: {current_level + 1}/{len(levels)}", 10, 50)
 
-        # Hiển thị máu boss nếu là màn boss
         if current_level == 4 and len(enemies) > 0 and isinstance(enemies[0], Boss):
             boss = enemies[0]
             draw_text(f"BOSS HP: {boss.health}", WIDTH // 2 - 60, 10)
